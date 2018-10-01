@@ -187,7 +187,7 @@ message SolverParameter {
 
   optional int32 snapshot = 14 [default = 0]; // The snapshot interval
   // The prefix for the snapshot.
-  // If not set then is replaced by prototxt file path without extension.
+  // If not set then is replaced by prototxt file path without extention.
   // If is set to directory then is augmented by prototxt file name
   // without extention.
   optional string snapshot_prefix = 15;
@@ -248,8 +248,8 @@ message SolverParameter {
 
   // Path to caffemodel file(s) with pretrained weights to initialize finetuning.
   // Tha same as command line --weights parameter for caffe train command.
-  // If command line --weights parameter is specified, it has higher priority
-  // and overwrites this one(s).
+  // If command line --weights parameter if specified, it has higher priority
+  // and owerwrites this one(s).
   // If --snapshot command line parameter is specified, this one(s) are ignored.
   // If several model files are expected, they can be listed in a one 
   // weights parameter separated by ',' (like in a command string) or
@@ -322,7 +322,7 @@ message ParamSpec {
 // NOTE
 // Update the next available ID when you add a new LayerParameter field.
 //
-// LayerParameter next available layer-specific ID: 149 (last added: clip_param)
+// LayerParameter next available layer-specific ID: 152 (last added: duplicate_param)
 message LayerParameter {
   optional string name = 1; // the layer name
   optional string type = 2; // the layer type
@@ -378,14 +378,15 @@ message LayerParameter {
   optional ArgMaxParameter argmax_param = 103;
   optional BatchNormParameter batch_norm_param = 139;
   optional BiasParameter bias_param = 141;
-  optional ClipParameter clip_param = 148;
   optional ConcatParameter concat_param = 104;
   optional ContrastiveLossParameter contrastive_loss_param = 105;
   optional ConvolutionParameter convolution_param = 106;
   optional CropParameter crop_param = 144;
   optional DataParameter data_param = 107;
+  optional DeconvTransParameter deconv_trans_param = 150;
   optional DropoutParameter dropout_param = 108;
   optional DummyDataParameter dummy_data_param = 109;
+  optional DuplicateParameter duplicate_param = 151;
   optional EltwiseParameter eltwise_param = 110;
   optional ELUParameter elu_param = 140;
   optional EmbedParameter embed_param = 137;
@@ -411,8 +412,10 @@ message LayerParameter {
   optional ReductionParameter reduction_param = 136;
   optional ReLUParameter relu_param = 123;
   optional ReshapeParameter reshape_param = 133;
+  optional ROIPoolingParameter roi_pooling_param = 149;
   optional ScaleParameter scale_param = 142;
   optional SigmoidParameter sigmoid_param = 124;
+  optional SmoothL1LossParameter smooth_l1_loss_param = 148;
   optional SoftmaxParameter softmax_param = 125;
   optional SPPParameter spp_param = 132;
   optional SliceParameter slice_param = 126;
@@ -504,12 +507,6 @@ message ArgMaxParameter {
   // By default ArgMaxLayer maximizes over the flattened trailing dimensions
   // for each index of the first / num dimension.
   optional int32 axis = 3;
-}
-
-// Message that stores parameters used by ClipLayer
-message ClipParameter {
-  required float min = 1;
-  required float max = 2;
 }
 
 message ConcatParameter {
@@ -694,8 +691,13 @@ message DataParameter {
   optional uint32 prefetch = 10 [default = 4];
 }
 
+message DeconvTransParameter {
+  repeated uint32 stride = 1;
+}
+
 message DropoutParameter {
   optional float dropout_ratio = 1 [default = 0.5]; // dropout ratio
+  optional bool scale_train = 2 [default = true];  // scale train or test phase
 }
 
 // DummyDataLayer fills any number of arbitrarily shaped blobs with random
@@ -717,6 +719,9 @@ message DummyDataParameter {
   repeated uint32 width = 5;
 }
 
+message DuplicateParameter {
+  optional uint32 duplicates = 1;
+}
 message EltwiseParameter {
   enum EltwiseOp {
     PROD = 0;
@@ -924,31 +929,28 @@ message PoolingParameter {
   }
   optional PoolMethod pool = 1 [default = MAX]; // The pooling method
   // Pad, kernel size, and stride are all given as a single value for equal
-  // dimensions in height and width or as Y, X pairs.
-  optional uint32 pad = 4 [default = 0]; // The padding size (equal in Y, X)
-  optional uint32 pad_h = 9 [default = 0]; // The padding height
-  optional uint32 pad_w = 10 [default = 0]; // The padding width
-  optional uint32 kernel_size = 2; // The kernel size (square)
-  optional uint32 kernel_h = 5; // The kernel height
-  optional uint32 kernel_w = 6; // The kernel width
-  optional uint32 stride = 3 [default = 1]; // The stride (equal in Y, X)
-  optional uint32 stride_h = 7; // The stride height
-  optional uint32 stride_w = 8; // The stride width
+  // dimensions in all spatial dimensions, or once per spatial dimension.
+  repeated uint32 pad = 4; // The padding size; defaults to 0
+  repeated uint32 kernel_size = 2; // The kernel size
+  repeated uint32 stride = 3; // The stride; defaults to 1
+
+  // For 2D padding only, the *_h and *_w versions may also be used to
+  // specify both spatial dimensions.
+  optional uint32 pad_h = 9 [default = 0]; // The padding height (2D only)
+  optional uint32 pad_w = 10 [default = 0]; // The padding width (2D only)
+  optional uint32 kernel_h = 5; // The kernel height (2D only)
+  optional uint32 kernel_w = 6; // The kernel width (2D only)
+  optional uint32 stride_h = 7; // The stride height (2D only)
+  optional uint32 stride_w = 8; // The stride width (2D only)
   enum Engine {
     DEFAULT = 0;
     CAFFE = 1;
     CUDNN = 2;
   }
   optional Engine engine = 11 [default = DEFAULT];
-  // If global_pooling then it will pool over the size of the bottom by doing
-  // kernel_h = bottom->height and kernel_w = bottom->width
+  // If global_pooling then it will pool over the size of the bottom by setting
+  // the size of the kernel to the size of the input image
   optional bool global_pooling = 12 [default = false];
-  // How to calculate the output size - using ceil (default) or floor rounding.
-  enum RoundMode {
-    CEIL = 0;
-    FLOOR = 1;
-  }
-  optional RoundMode round_mode = 13 [default = CEIL];
 }
 
 message PowerParameter {
@@ -1098,6 +1100,17 @@ message ReshapeParameter {
   optional int32 num_axes = 3 [default = -1];
 }
 
+// Message that stores parameters used by ROIPoolingLayer
+message ROIPoolingParameter {
+  // Pad, kernel size, and stride are all given as a single value for equal
+  // dimensions in height and width or as Y, X pairs.
+  optional uint32 pooled_h = 1 [default = 0]; // The pooled output height
+  optional uint32 pooled_w = 2 [default = 0]; // The pooled output width
+  // Multiplicative spatial scale factor to translate ROI coords from their
+  // input scale to the scale used when pooling
+  optional float spatial_scale = 3 [default = 1];
+}
+
 message ScaleParameter {
   // The first axis of bottom[0] (the first input Blob) along which to apply
   // bottom[1] (the second input Blob).  May be negative to index from the end
@@ -1153,6 +1166,13 @@ message SliceParameter {
 
   // DEPRECATED: alias for "axis" -- does not support negative indexing.
   optional uint32 slice_dim = 1 [default = 1];
+}
+
+message SmoothL1LossParameter {
+  // SmoothL1Loss(x) =
+  //   0.5 * (sigma * x) ** 2    -- if x < 1.0 / sigma / sigma
+  //   |x| - 0.5 / sigma / sigma -- otherwise
+  optional float sigma = 1 [default = 1];
 }
 
 // Message that stores parameters used by SoftmaxLayer, SoftmaxWithLossLayer
